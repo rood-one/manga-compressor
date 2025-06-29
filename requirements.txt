@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+cloudscraper
+aiohttp
+Pillow
+img2pdf
