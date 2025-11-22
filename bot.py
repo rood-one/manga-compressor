@@ -1,5 +1,4 @@
 import os
-import re
 import tempfile
 import logging
 from io import BytesIO
@@ -24,9 +23,6 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-
-# 🚨 المتغير العام محدث 🚨
-app: Optional[Application] = None
 
 # --- وظائف المساعدة ---
 
@@ -200,8 +196,6 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- نقطة الدخول الرئيسية محدثة ---
 def main():
-    global app
-
     PORT = int(os.environ.get('PORT', 8080))
     WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
@@ -211,9 +205,6 @@ def main():
 
     # 🚨 استخدام Application بدلاً من Updater 🚨
     application = Application.builder().token(BOT_TOKEN).build()
-    
-    # 💥 تعيين المتغير العام app ليكون هو application 💥
-    app = application
 
     # تسجيل المعالجات
     application.add_handler(CommandHandler("start", start_command))
@@ -226,7 +217,8 @@ def main():
             listen="0.0.0.0",
             port=PORT,
             url_path=BOT_TOKEN,
-            webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}"
+            webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}",
+            secret_token=None  # يمكنك إضافة secret token إذا أردت
         )
     else:
         logger.info("تشغيل البوت كـ Polling...")
