@@ -15,10 +15,11 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 # --- الإعدادات والثوابت ---
 # يجب تغيير هذا إلى رمز البوت الخاص بك
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN") 
-# يجب عليك معرفة معرّف التليجرام الخاص بك (Telegram User ID)
-# لحماية البوت وجعله يرد عليك أنت فقط.
-ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID", "YOUR_TELEGRAM_USER_ID")) # استبدل بـ ID الخاص بك
+ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID", "YOUR_TELEGRAM_USER_ID"))
 
+# 💥 التعديل هنا: تعريف كائن التطبيق كمتغير عام 💥
+# Gunicorn سيستورد هذا المتغير: bot:app
+app = Application.builder().token(BOT_TOKEN).build()
 # إعداد التسجيل
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -225,6 +226,7 @@ def main():
     # Render يتطلب أن يستمع التطبيق على منفذ (Port) كخدمة ويب
     # لذلك، سنستخدم طريقة Webhook بدلاً من Polling إذا تم توفير متغيرات البيئة.
     
+    
     PORT = int(os.environ.get('PORT', 8080))
     WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
@@ -232,12 +234,7 @@ def main():
         logger.error("الرجاء تحديد BOT_TOKEN في متغيرات البيئة أو استبدال القيمة الافتراضية.")
         return
 
-    if ALLOWED_USER_ID == 0 or ALLOWED_USER_ID == "YOUR_TELEGRAM_USER_ID":
-        logger.warning("الرجاء تحديد ALLOWED_USER_ID في متغيرات البيئة أو استبدال القيمة الافتراضية للحماية.")
-
-    app = Application.builder().token(BOT_TOKEN).build()
-
-    # تسجيل المعالجات
+    # 1. تسجيل المعالجات (نستخدم المتغير app العام الآن)
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
     app.add_error_handler(error_handler)
@@ -245,7 +242,8 @@ def main():
     if WEBHOOK_URL:
         # تشغيل كـ Webhook (مطلوب لـ Render)
         logger.info(f"تشغيل البوت كـ Webhook على المنفذ {PORT}")
-        app.run_webhook(
+        # 2. بدء تشغيل Webhook باستخدام الكائن app العام
+        app.run_webhook( 
             listen="0.0.0.0",
             port=PORT,
             url_path=BOT_TOKEN,
@@ -253,7 +251,7 @@ def main():
         )
     else:
         # تشغيل كـ Polling (للتجربة المحلية)
-        logger.info("تشغيل البوت كـ Polling (للتجربة المحلية، قم بتحديد WEBHOOK_URL لتشغيل Render)")
+        logger.info("تشغيل البوت كـ Polling...")
         app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
