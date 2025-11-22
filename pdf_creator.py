@@ -36,8 +36,7 @@ def optimize_image_size(image_path, max_size=(1600, 1600), quality=75):
                 'JPEG', 
                 quality=quality, 
                 optimize=True, 
-                progressive=True,
-                subsampling=0  # 4:4:4 لا يوجد داون سامبلنج للون
+                progressive=True
             )
             
             # التحقق من أن الملف المضغوط موجود وصالح
@@ -58,7 +57,6 @@ def optimize_image_size(image_path, max_size=(1600, 1600), quality=75):
             
     except Exception as e:
         logging.error(f"❌ خطأ في ضغط الصورة {os.path.basename(image_path)}: {e}")
-        logging.error(traceback.format_exc())
         # في حالة الخطأ، نعود للصورة الأصلية
         return image_path
 
@@ -99,18 +97,19 @@ def create_compressed_pdf(image_paths, output_path):
             logging.info(f"🔧 معالجة الصورة {i+1}/{len(image_paths)}: {os.path.basename(image_path)}")
             
             try:
-                # أولاً: تحويل الصورة إلى تنسيق آمن
-                safe_path = safe_image_conversion(image_path)
-                if safe_path != image_path:
-                    temp_files.append(safe_path)
-                
-                # ثانياً: ضغط الصورة
-                compressed_path = optimize_image_size(safe_path)
-                if compressed_path != safe_path and compressed_path not in temp_files:
+                # أولاً: ضغط الصورة
+                compressed_path = optimize_image_size(image_path)
+                if compressed_path != image_path:
                     temp_files.append(compressed_path)
+                    final_path = compressed_path
+                else:
+                    final_path = image_path
                 
-                # استخدام المسار المضغوط إذا كان مختلفاً
-                final_path = compressed_path if compressed_path != safe_path else safe_path
+                # ثانياً: تحويل الصورة إلى تنسيق آمن إذا لزم الأمر
+                safe_path = safe_image_conversion(final_path)
+                if safe_path != final_path:
+                    temp_files.append(safe_path)
+                    final_path = safe_path
                 
                 # التحقق النهائي من وجود الملف
                 if os.path.exists(final_path):
@@ -134,22 +133,26 @@ def create_compressed_pdf(image_paths, output_path):
         
         logging.info(f"📄 جاري إنشاء PDF من {len(processed_paths)} صورة...")
         
-        # إعدادات PDF
-        pdf_layout = img2pdf.get_layout_fun(
-            pagesize=img2pdf.get_fit_size(
-                img2pdf.mm_to_pt((210, 297)),  # A4
-                img2pdf.mm_to_pt((200, 280))   # هوامش صغيرة
-            )
-        )
-        
-        # إنشاء PDF
-        with open(output_path, "wb") as f:
-            pdf_data = img2pdf.convert(
-                processed_paths, 
-                layout_fun=pdf_layout,
-                rotation=img2pdf.Rotation.ifvalid
-            )
-            f.write(pdf_data)
+        # إعدادات PDF مبسطة - إصلاح الخطأ هنا
+        try:
+            # الطريقة المبسطة: استخدام حجم A4 ثابت
+            a4_layout = (img2pdf.mm_to_pt(210), img2pdf.mm_to_pt(297))  # A4 بالبوصة
+            
+            # إنشاء PDF مع إعدادات مبسطة
+            with open(output_path, "wb") as f:
+                pdf_data = img2pdf.convert(
+                    processed_paths, 
+                    layout_fun=lambda img: img2pdf.get_fixed_dpi_layout_fun((210, 297))(img)
+                )
+                f.write(pdf_data)
+                
+        except Exception as pdf_error:
+            logging.error(f"❌ خطأ في الإعدادات المتقدمة للPDF: {pdf_error}")
+            # الطريقة الأبسط: إنشاء PDF بدون إعدادات خاصة
+            logging.info("🔄 جرب إنشاء PDF بالإعدادات الافتراضية...")
+            with open(output_path, "wb") as f:
+                pdf_data = img2pdf.convert(processed_paths)
+                f.write(pdf_data)
         
         # التحقق من أن PDF تم إنشاؤه
         if not os.path.exists(output_path):
