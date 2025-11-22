@@ -2,20 +2,23 @@ import os
 import tempfile
 import logging
 from io import BytesIO
+import asyncio
 
 import requests
 from bs4 import BeautifulSoup
 from PIL import Image
 import img2pdf
 
-# 🚨 Imports محدثة لـ PTB v20 🚨
+# 🚨 Imports محدثة لـ PTB v21 🚨
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram import Update
-from typing import Optional
 
 # --- الإعدادات والثوابت ---
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN") 
-ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID", "YOUR_TELEGRAM_USER_ID"))
+BOT_TOKEN = os.environ.get("BOT_TOKEN") 
+ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID", "0"))
+
+if not BOT_TOKEN:
+    raise ValueError("الرجاء تحديد BOT_TOKEN في متغيرات البيئة")
 
 # إعداد التسجيل
 logging.basicConfig(
@@ -56,11 +59,15 @@ def get_image_url_list(base_url: str) -> list[str]:
                 image_url = base_image_path + filename
                 
                 # التحقق السريع من وجود الصورة (باستخدام HEAD)
-                head_check = requests.head(image_url, timeout=5)
-                if head_check.status_code == 200 and 'image' in head_check.headers.get('Content-Type', ''):
-                    image_urls.append(image_url)
-                else:
-                    logger.info(f"لم يتم العثور على {image_url}. التوقف.")
+                try:
+                    head_check = requests.head(image_url, timeout=5)
+                    if head_check.status_code == 200 and 'image' in head_check.headers.get('Content-Type', ''):
+                        image_urls.append(image_url)
+                    else:
+                        logger.info(f"لم يتم العثور على {image_url}. التوقف.")
+                        break
+                except:
+                    logger.info(f"فشل في الوصول إلى {image_url}. التوقف.")
                     break
             
     except requests.exceptions.RequestException as e:
@@ -133,7 +140,9 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = await update.message.reply_text(f"جاري معالجة الرابط: `{url}`. يرجى الانتظار...")
 
     try:
-        image_urls = get_image_url_list(url)
+        # استخدام thread pool للدوال الغير async
+        loop = asyncio.get_event_loop()
+        image_urls = await loop.run_in_executor(None, get_image_url_list, url)
         
         if not image_urls:
             await context.bot.edit_message_text(
@@ -149,7 +158,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text=f"✅ تم العثور على **{len(image_urls)}** صور. جاري التنزيل والضغط..."
         )
 
-        compressed_image_bytes = download_and_compress_images(image_urls)
+        compressed_image_bytes = await loop.run_in_executor(None, download_and_compress_images, image_urls)
         
         if not compressed_image_bytes:
             await context.bot.edit_message_text(
@@ -165,28 +174,34 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text="⏳ جاري تجميع الصور في ملف PDF..."
         )
 
-        pdf_bytes = img2pdf.convert(compressed_image_bytes)
+        # إنشاء PDF
+        pdf_bytes = await loop.run_in_executor(None, img2pdf.convert, compressed_image_bytes)
         
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_pdf:
             tmp_pdf.write(pdf_bytes)
             tmp_pdf_path = tmp_pdf.name
 
-        await update.message.reply_document(
-            document=open(tmp_pdf_path, 'rb'),
-            filename="compressed_images.pdf",
-            caption=f"تم إنشاء ملف PDF بنجاح! ({len(compressed_image_bytes)} صورة)"
-        )
+        # إرسال الملف
+        with open(tmp_pdf_path, 'rb') as pdf_file:
+            await update.message.reply_document(
+                document=pdf_file,
+                filename="compressed_images.pdf",
+                caption=f"تم إنشاء ملف PDF بنجاح! ({len(compressed_image_bytes)} صورة)"
+            )
 
         os.remove(tmp_pdf_path)
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=message.message_id) 
         
     except Exception as e:
         logger.error(f"حدث خطأ كبير: {e}")
-        await context.bot.edit_message_text(
-            chat_id=update.effective_chat.id,
-            message_id=message.message_id,
-            text=f"🚫 حدث خطأ غير متوقع أثناء المعالجة."
-        )
+        try:
+            await context.bot.edit_message_text(
+                chat_id=update.effective_chat.id,
+                message_id=message.message_id,
+                text="🚫 حدث خطأ غير متوقع أثناء المعالجة."
+            )
+        except:
+            pass
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """يسجل الأخطاء التي تسببها التحديثات."""
@@ -195,15 +210,12 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("عذراً، حدث خطأ داخلي. يرجى التحقق من الرابط والمحاولة مرة أخرى.")
 
 # --- نقطة الدخول الرئيسية محدثة ---
-def main():
+async def main():
+    """الدالة الرئيسية بشكل async"""
     PORT = int(os.environ.get('PORT', 8080))
     WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
-    if not BOT_TOKEN or BOT_TOKEN == "YOUR_BOT_TOKEN":
-        logger.error("الرجاء تحديد BOT_TOKEN في متغيرات البيئة أو استبدال القيمة الافتراضية.")
-        return
-
-    # 🚨 استخدام Application بدلاً من Updater 🚨
+    # بناء التطبيق
     application = Application.builder().token(BOT_TOKEN).build()
 
     # تسجيل المعالجات
@@ -213,16 +225,17 @@ def main():
 
     if WEBHOOK_URL:
         logger.info(f"تشغيل البوت كـ Webhook على المنفذ {PORT}")
-        application.run_webhook(
+        await application.run_webhook(
             listen="0.0.0.0",
             port=PORT,
             url_path=BOT_TOKEN,
             webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}",
-            secret_token=None  # يمكنك إضافة secret token إذا أردت
+            secret_token=None
         )
     else:
         logger.info("تشغيل البوت كـ Polling...")
-        application.run_polling()
+        await application.run_polling()
 
 if __name__ == "__main__":
-    main()
+    # تشغيل التطبيق بشكل async
+    asyncio.run(main())
