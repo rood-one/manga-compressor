@@ -1,6 +1,6 @@
-fastapi
-uvicorn[standard]
-cloudscraper
-aiohttp
+python-telegram-bot==20.8
+requests
 Pillow
 img2pdf
+beautifulsoup4  # لاستخراج روابط الصور من الصفحة
+gunicorn        # لتشغيل البوت على Render كخدمة ويب
