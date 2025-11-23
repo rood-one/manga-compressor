@@ -7,7 +7,7 @@ import traceback
 # السماح بتحميل الصور التالفة جزئياً
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
-def optimize_image_size(image_path, max_width=1200, quality=75):
+def optimize_image_size(image_path, max_width=1200, quality=65):
     """
     ضغط صورة مع الحفاظ على الجودة خاصة للصور الطويلة
     """
@@ -53,7 +53,7 @@ def optimize_image_size(image_path, max_width=1200, quality=75):
             # حفظ بإعدادات جودة أعلى للصور الطويلة
             save_quality = quality
             if original_height > 5000:
-                save_quality = 70  # جودة أعلى للصور الطويلة جداً
+                save_quality = 60  # جودة أعلى للصور الطويلة جداً
             
             resized_img.save(
                 compressed_path, 
@@ -102,11 +102,11 @@ def safe_image_conversion(image_path):
                 img = img.convert('RGB')
             
             # جودة أعلى للصور الطويلة
-            save_quality = 75
+            save_quality = 65
             if original_height > 5000:
-                save_quality = 70
+                save_quality = 60
             elif original_height > 3000:
-                save_quality = 78
+                save_quality = 68
             
             # حفظ كصورة JPEG آمنة
             img.save(temp_path, 'JPEG', quality=save_quality, optimize=True)
