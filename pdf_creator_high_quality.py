@@ -42,7 +42,7 @@ def create_high_quality_pdf(image_paths, output_path):
                     temp_path = image_path + '_hq.jpg'
                     
                     # جودة عالية للصور الطويلة
-                    quality = 75 if original_height > 3000 else 90
+                    quality = 65 if original_height > 3000 else 90
                     
                     img_resized.save(temp_path, 'JPEG', quality=quality, optimize=True)
                     valid_images.append(temp_path)
