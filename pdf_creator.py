@@ -3,9 +3,14 @@ from PIL import Image, ImageFile
 import os
 import logging
 import traceback
+import natsort  # إضافة مكتبة لترتيب طبيعي للأسماء
 
 # السماح بتحميل الصور التالفة جزئياً
 ImageFile.LOAD_TRUNCATED_IMAGES = True
+
+def sort_images_naturally(image_paths):
+    """ترتيب قائمة المسارات بشكل طبيعي حسب أسماء الملفات"""
+    return natsort.natsorted(image_paths)
 
 def optimize_image_size(image_path, max_width=1200, quality=65):
     """
@@ -46,7 +51,8 @@ def optimize_image_size(image_path, max_width=1200, quality=65):
                 logging.info(f"📏 الصورة العادية - الأبعاد الجديدة: {resized_img.size}")
             
             # حفظ الصورة المضغوطة
-            compressed_path = image_path.replace('.jpg', '_compressed.jpg')
+            base_name = os.path.splitext(image_path)[0]
+            compressed_path = f"{base_name}_compressed.jpg"
             if os.path.exists(compressed_path):
                 os.remove(compressed_path)
             
@@ -92,7 +98,8 @@ def safe_image_conversion(image_path):
     تحويل الصورة إلى تنسيق آمن لإنشاء PDF مع الحفاظ على الجودة
     """
     try:
-        temp_path = image_path + '_safe.jpg'
+        base_name = os.path.splitext(image_path)[0]
+        temp_path = f"{base_name}_safe.jpg"
         
         with Image.open(image_path) as img:
             original_width, original_height = img.size
@@ -124,7 +131,15 @@ def create_compressed_pdf(image_paths, output_path):
     temp_files = []
     
     try:
-        # معالجة كل الصور أولاً
+        # ترتيب الصور بشكل طبيعي حسب الأسماء أولاً
+        image_paths = sort_images_naturally(image_paths)
+        logging.info(f"📂 تم ترتيب {len(image_paths)} صورة حسب الأسماء")
+        
+        # عرض أسماء الصور بالترتيب
+        for i, path in enumerate(image_paths):
+            logging.info(f"📷 الصورة {i+1}: {os.path.basename(path)}")
+        
+        # معالجة كل الصور بالترتيب
         for i, image_path in enumerate(image_paths):
             if not os.path.exists(image_path):
                 logging.warning(f"⚠️ الملف غير موجود: {image_path}")
@@ -161,7 +176,13 @@ def create_compressed_pdf(image_paths, output_path):
         if not processed_paths:
             raise Exception("لم تتم معالجة أي صور بنجاح")
         
+        # التأكد من أن الصور مرتبة قبل إنشاء PDF
+        processed_paths = sort_images_naturally(processed_paths)
+        
         logging.info(f"📄 جاري إنشاء PDF من {len(processed_paths)} صورة...")
+        logging.info("📋 ترتيب الصور في PDF:")
+        for i, path in enumerate(processed_paths):
+            logging.info(f"  {i+1}. {os.path.basename(path)}")
         
         # إعدادات PDF محسنة للصور الطويلة
         try:
@@ -188,6 +209,11 @@ def create_compressed_pdf(image_paths, output_path):
         
         file_size = os.path.getsize(output_path) / (1024 * 1024)  # بالميجابايت
         logging.info(f"✅ تم إنشاء PDF بنجاح! الحجم: {file_size:.2f} MB")
+        logging.info(f"📍 تم حفظ الصور بالترتيب التالي في PDF:")
+        
+        # عرض الترتيب النهائي للصور في PDF
+        for i, path in enumerate(processed_paths):
+            logging.info(f"  {i+1}. {os.path.basename(path)}")
         
     except Exception as e:
         logging.error(f"❌ خطأ في إنشاء PDF: {e}")
@@ -200,5 +226,6 @@ def create_compressed_pdf(image_paths, output_path):
             try:
                 if os.path.exists(temp_file) and temp_file != output_path:
                     os.remove(temp_file)
+                    logging.info(f"🧹 تم حذف الملف المؤقت: {os.path.basename(temp_file)}")
             except Exception as e:
                 logging.warning(f"⚠️ لا يمكن حذف الملف المؤقت {temp_file}: {e}")
