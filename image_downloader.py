@@ -6,6 +6,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 from PIL import Image
 import re
+import natsort  # إضافة مكتبة لترتيب طبيعي للأسماء
 
 def wait_for_page_load(url, session, delay=5):
     """انتظار تحميل الصفحة بشكل كامل"""
@@ -20,7 +21,7 @@ def wait_for_page_load(url, session, delay=5):
         return None
 
 def find_image_urls(soup, base_url):
-    """الباحث عن جميع روابط الصور في الصفحة"""
+    """البحث عن جميع روابط الصور في الصفحة"""
     image_urls = []
     
     # البحث في وسوم img
@@ -77,6 +78,7 @@ def download_sequential_images(base_url, download_dir, session, max_images=100):
             try:
                 response = session.get(image_url, timeout=10)
                 if response.status_code == 200 and 'image' in response.headers.get('content-type', ''):
+                    # استخدام نفس تنسيق الاسم للجميع لضمان الترتيب
                     image_path = os.path.join(download_dir, f"{i:03d}.jpg")
                     
                     with open(image_path, 'wb') as f:
@@ -119,13 +121,18 @@ def download_images(base_url, download_dir):
         
         logging.info(f"🔍 تم العثور على {len(found_urls)} رابط صورة محتمل في الصفحة")
         
-        # تحميل الصور التي تم العثور عليها
+        # تحميل الصور التي تم العثور عليها مع تسمية منظمة
         for i, img_url in enumerate(found_urls):
             try:
                 response = session.get(img_url, timeout=15)
                 if response.status_code == 200 and 'image' in response.headers.get('content-type', ''):
-                    filename = f"found_{i+1:03d}.jpg"
-                    image_path = os.path.join(download_dir, filename)
+                    # استخراج اسم الملف من الرابط
+                    img_filename = os.path.basename(urlparse(img_url).path)
+                    if not img_filename:
+                        img_filename = f"found_{i+1:03d}.jpg"
+                    
+                    # إضافة بادئة لضمان الترتيب
+                    image_path = os.path.join(download_dir, f"found_{i+1:04d}_{img_filename}")
                     
                     with open(image_path, 'wb') as f:
                         f.write(response.content)
@@ -135,7 +142,7 @@ def download_images(base_url, download_dir):
                         with Image.open(image_path) as img:
                             img.verify()
                         all_downloaded.append(image_path)
-                        logging.info(f"✅ تم تحميل صورة من الصفحة: {os.path.basename(img_url)}")
+                        logging.info(f"✅ تم تحميل صورة من الصفحة: {img_filename}")
                     except Exception:
                         os.remove(image_path)
                         
@@ -148,8 +155,30 @@ def download_images(base_url, download_dir):
             sequential_images = download_sequential_images(base_url, download_dir, session)
             all_downloaded.extend(sequential_images)
         
-        # ترتيب الصور حسب الأسماء
-        all_downloaded.sort()
+        # ترتيب الصور حسب الأسماء بشكل طبيعي
+        all_downloaded = natsort.natsorted(all_downloaded)
+        
+        # إعادة تسمية الملفات لضمان ترتيب واضح
+        for idx, old_path in enumerate(all_downloaded):
+            # استخراج الامتداد من الملف القديم
+            ext = os.path.splitext(old_path)[1]
+            if not ext:
+                ext = '.jpg'
+            
+            # إنشاء اسم جديد برقم تسلسلي
+            new_filename = f"image_{idx+1:04d}{ext}"
+            new_path = os.path.join(download_dir, new_filename)
+            
+            # تجنب تعارض الأسماء
+            if old_path != new_path:
+                try:
+                    os.rename(old_path, new_path)
+                    all_downloaded[idx] = new_path
+                except Exception as e:
+                    logging.warning(f"⚠️ لم أستطع إعادة تسمية {old_path}: {e}")
+        
+        # إعادة الترتيب بعد إعادة التسمية
+        all_downloaded = natsort.natsorted(all_downloaded)
         
     except Exception as e:
         logging.error(f"❌ خطأ في عملية التحميل: {e}")
